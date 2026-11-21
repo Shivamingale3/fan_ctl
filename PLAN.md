@@ -28,20 +28,21 @@ Run the case fan (GPIO27, pin 13) at a speed set by **whichever of the NVMe and 
  service stop / crash ─► ExecStopPost sets 100 %  (sysfs PWM keeps the value after exit)
 ```
 
-## 3. Speed curves (first guess, tuned after the bench test)
+## 3. Speed curves (from simulation, see [sim/RESULTS.md](sim/RESULTS.md); MIN confirmed by bench test)
 
 | NVMe °C | CPU °C | Fan duty |
 |---|---|---|
-| < 50 | < 55 | 0 % (off) |
-| 50 | 55 | MIN (≈35 %, from bench test) |
-| 50 → 70 | 55 → 75 | linear MIN → 100 % |
-| ≥ 70 | ≥ 75 | 100 % |
+| ≤ 55 | ≤ 60 | MIN (≈30 %), **never off** |
+| 55 → 72 | 60 → 80 | linear MIN → 100 % |
+| ≥ 72 | ≥ 80 | 100 % |
+
+Expected (model): idle ≈ 54 °C at 40 %, 50 % load ≈ 63 °C at 65 %, full load ≈ 70 °C at 100 %.
 
 - Final duty = the higher of the two.
 - **Hysteresis 3 °C:** speed only drops once the temperature is 3 °C below the point that raised it, so the fan doesn't hunt.
-- **Kick-start:** going from 0 % to anything, run 100 % for 1 s first so the fan starts reliably.
+- **Kick-start:** at service start, run 100 % for 2 s so the fan starts reliably from a standstill.
 - Duty is rounded **up** to 5 % steps, so nothing is written for tiny changes.
-- **Open:** fan floor. NVMe idles ~61 °C, so with these numbers the fan will rarely be off at all. Option: a fixed low floor (e.g. MIN) and never fully off.
+- Fan floor: never off (user decision).
 
 ## 4. Fail-safe rules
 
@@ -51,7 +52,7 @@ Run the case fan (GPIO27, pin 13) at a speed set by **whichever of the NVMe and 
 | NVMe hwmon not there yet at boot | use CPU only + 100 % until NVMe appears |
 | PWM chip missing (overlay not loaded) | log error, exit non-zero → systemd restarts every 10 s |
 | Service stopped or crashed | `ExecStopPost` writes duty = period (100 %) |
-| Temp ≥ 75 °C either sensor | 100 % (curve covers it) |
+| NVMe ≥ 72 °C or CPU ≥ 80 °C | 100 % (curve covers it) |
 
 ## 5. Files
 
@@ -65,6 +66,7 @@ fan_ctl/
 ├── install.sh              # run on the Pi: download release, verify sha256, install, enable
 ├── .github/workflows/release.yml
 ├── tests_data/             # thermal test logs
+├── sim/                    # thermal model + curve simulation (model.py, curve.py, RESULTS.md)
 └── README.md               # pins, curve, how to tune, how to uninstall
 ```
 
@@ -101,8 +103,8 @@ fan_ctl/
 
 **Rollback:** `systemctl disable --now fan_ctl`, remove the overlay line and reboot → pin back to default (fan off), or use the `pinctrl set 27 op dh` line for always-on.
 
-## 9. Decisions needed from you
+## 9. Decisions (2026-11-21)
 
-1. **GitHub repo:** new repo `fan_ctl`, public (the Pi downloads with no token) or private (needs a token on the Pi)? Or a folder in the existing private repo?
-2. **Fan floor:** allow fully off below 50 °C NVMe / 55 °C CPU, or always at least MIN?
-3. **Curve numbers** in §3: OK as a starting point?
+1. Repo: **new public GitHub repo** `fan_ctl`. The Pi downloads releases with no token.
+2. Fan floor: **never off**, MIN from the bench test.
+3. Curve: chosen by simulation (C), see §3.

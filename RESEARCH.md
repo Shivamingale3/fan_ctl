@@ -97,10 +97,10 @@ CPU cost is ~0 for all at a 5–15 s interval. **Rust chosen** (user decision).
 - arm64 hosted runners (`ubuntu-24.04-arm`) **work in private repos since Jan 2026**; 2 vCPU/8 GB; minutes count against the plan's free minutes. [changelog](https://github.blog/changelog/2026-01-29-arm64-standard-runners-are-now-available-in-private-repositories), [GA](https://github.blog/changelog/2026-09-03-github-actions-arm64-linux-and-windows-runners-are-now-generally-available/)
 - Alternative: x86 `ubuntu-latest` + `rustup target add aarch64-unknown-linux-musl` + `-C linker=rust-lld -C link-self-contained=yes`. Works for std-only crates (no C deps). [Rust forum](https://users.rust-lang.org/t/cross-compilation-linux-x86-64-host-aarch64-target/105680)
 - Release upload: `gh release create` with the built-in `GITHUB_TOKEN` (`permissions: contents: write`). No third-party actions needed.
-- Repo: the parent repo `Shivamingale3/rpi5-pebble-case` is **private**. Downloading a private release asset on the Pi needs a token; a public repo needs none.
+- Repo: downloading a private release asset on the Pi needs a token; a public repo needs none → public repo chosen.
 
 ## 9. Open questions
 
 1. Lowest duty that starts / keeps this fan spinning (bench test).
 2. Is 25 kHz OK with the unknown transistor, or does it need a lower frequency (e.g. 1–5 kHz)? A slow transistor at 25 kHz runs hot and may not switch cleanly. Bench test both.
-3. Separate GitHub repo for `fan_ctl` (public or private?) or a folder in the existing repo?
+3. ~~Repo~~ → new public repo (decided 2026-11-21).
