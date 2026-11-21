@@ -21,3 +21,16 @@ lto = true
 codegen-units = 1
 panic = "abort"     # systemd restarts us; no unwinding machinery needed
 strip = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unused_qualifications = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+print_stdout = "warn"   # logging goes through the log module (stderr → journald)
