@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: aarch64-unknown-linux-musl
+
+jobs:
+  release:
+    name: build and publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag must match Cargo.toml version
+        run: |
+          crate="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          echo "tag=$GITHUB_REF_NAME crate=$crate"
+          [ "$GITHUB_REF_NAME" = "$crate" ]
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --target "$TARGET"
+          rustup default stable
+
+      - run: cargo test --locked
+
+      - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
+        run: cargo build --release --locked --target "$TARGET"
+
+      - name: Stage assets
+        run: |
+          BIN="target/$TARGET/release/fan_ctl"
+          file "$BIN" | tee /dev/stderr | grep -q "ARM aarch64.*statically linked"
+          mkdir dist
+          cp "$BIN" dist/fan_ctl-aarch64
+          cp packaging/fan_ctl.service packaging/fan_ctl.conf packaging/install.sh dist/
+          (cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          {
+            echo "Install or upgrade on a Raspberry Pi 5 (64-bit Raspberry Pi OS):"
+            echo
+            echo '```sh'
+            echo "curl -fsSL https://github.com/$REPO/releases/download/$GITHUB_REF_NAME/install.sh | sudo sh -s -- --version $GITHUB_REF_NAME"
+            echo '```'
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "fan_ctl $GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            --generate-notes

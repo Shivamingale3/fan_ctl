@@ -7,6 +7,7 @@ use std::{env, path::PathBuf, process::ExitCode};
 
 use fan_ctl::config::{self, Config};
 use fan_ctl::daemon::{Daemon, DryRunFan, FanOutput, ThreadSleeper};
+use fan_ctl::duty::Duty;
 use fan_ctl::log::{self, Level};
 use fan_ctl::pwm::{self, PwmChannel};
 use fan_ctl::sensor::{CPU_CHIP, HwmonSensor, NVME_CHIP};
@@ -21,6 +22,7 @@ Options:
   -c, --config <PATH>  config file (default: /etc/fan_ctl.conf, used if present)
   -n, --dry-run        read sensors and log decisions; never touch the PWM
   -1, --once           run a single control step and exit
+  -f, --full           set the fan to 100% and exit (fail-safe, used on service stop)
   -v, --verbose        log every step, not only changes
   -h, --help           print this help
   -V, --version        print the version
@@ -28,11 +30,23 @@ Options:
 
 const USAGE_ERROR: u8 = 2;
 
+/// What to do after start-up.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Mode {
+    /// Control the fan until stopped.
+    #[default]
+    Run,
+    /// One control step, then exit (`--once`).
+    Once,
+    /// Fan to 100 %, then exit (`--full`).
+    Full,
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Options {
     config: Option<PathBuf>,
+    mode: Mode,
     dry_run: bool,
-    once: bool,
     verbose: bool,
 }
 
@@ -53,7 +67,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
                 opts.config = Some(PathBuf::from(path));
             }
             "-n" | "--dry-run" => opts.dry_run = true,
-            "-1" | "--once" => opts.once = true,
+            "-1" | "--once" => opts.mode = set_mode(opts.mode, Mode::Once)?,
+            "-f" | "--full" => opts.mode = set_mode(opts.mode, Mode::Full)?,
             "-v" | "--verbose" => opts.verbose = true,
             "-h" | "--help" => return Ok(Command::Help),
             "-V" | "--version" => return Ok(Command::Version),
@@ -61,6 +76,14 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
         }
     }
     Ok(Command::Run(opts))
+}
+
+fn set_mode(current: Mode, wanted: Mode) -> Result<Mode, String> {
+    if current == Mode::Run || current == wanted {
+        Ok(wanted)
+    } else {
+        Err("--once and --full cannot be combined".to_owned())
+    }
 }
 
 #[allow(clippy::print_stdout)] // --help and --version belong on stdout
@@ -97,6 +120,10 @@ fn run(opts: &Options) -> ExitCode {
             return ExitCode::from(USAGE_ERROR);
         }
     };
+    if opts.mode == Mode::Full {
+        return full_speed(&cfg, opts.dry_run);
+    }
+
     log::info(format_args!(
         "fan_ctl {} starting: nvme {}→{} °C, cpu {}→{} °C, min {}, {} Hz{}",
         env!("CARGO_PKG_VERSION"),
@@ -112,7 +139,7 @@ fn run(opts: &Options) -> ExitCode {
     let cpu = HwmonSensor::new(&cfg.sysfs_root, CPU_CHIP);
     let nvme = HwmonSensor::new(&cfg.sysfs_root, NVME_CHIP);
     if opts.dry_run {
-        return drive(Daemon::new(cpu, nvme, DryRunFan, ThreadSleeper, &cfg), opts.once);
+        return drive(Daemon::new(cpu, nvme, DryRunFan, ThreadSleeper, &cfg), opts.mode);
     }
 
     let channel = pwm::find_chip(&cfg.sysfs_root, &cfg.pwm_device)
@@ -120,7 +147,28 @@ fn run(opts: &Options) -> ExitCode {
     match channel {
         Ok(pwm) => {
             log::info(format_args!("driving {}", pwm.path().display()));
-            drive(Daemon::new(cpu, nvme, pwm, ThreadSleeper, &cfg), opts.once)
+            drive(Daemon::new(cpu, nvme, pwm, ThreadSleeper, &cfg), opts.mode)
+        }
+        Err(e) => {
+            log::error(format_args!("pwm: {e}"));
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `--full`: drive the fan to 100 % and exit, without reading any sensor.
+fn full_speed(cfg: &Config, dry_run: bool) -> ExitCode {
+    let result = if dry_run {
+        DryRunFan.set(Duty::FULL)
+    } else {
+        pwm::find_chip(&cfg.sysfs_root, &cfg.pwm_device)
+            .and_then(|chip| PwmChannel::open(&chip, cfg.pwm_channel, cfg.period_ns))
+            .and_then(|pwm| pwm.set(Duty::FULL))
+    };
+    match result {
+        Ok(()) => {
+            log::info(format_args!("fan set to {}", Duty::FULL));
+            ExitCode::SUCCESS
         }
         Err(e) => {
             log::error(format_args!("pwm: {e}"));
@@ -131,9 +179,9 @@ fn run(opts: &Options) -> ExitCode {
 
 fn drive<F: FanOutput>(
     mut daemon: Daemon<HwmonSensor, HwmonSensor, F, ThreadSleeper>,
-    once: bool,
+    mode: Mode,
 ) -> ExitCode {
-    if once {
+    if mode == Mode::Once {
         return match daemon.tick() {
             Ok(tick) => {
                 log::info(format_args!("next step would be in {:?}", tick.next_in));
@@ -169,21 +217,28 @@ mod tests {
 
     #[test]
     fn all_flags() {
-        let want = Options {
+        let want = |mode| Options {
             config: Some(PathBuf::from("/tmp/f.conf")),
+            mode,
             dry_run: true,
-            once: true,
             verbose: true,
         };
-        assert_eq!(parse(&["-c", "/tmp/f.conf", "-n", "-1", "-v"]), Ok(Command::Run(want)));
         assert_eq!(
-            parse(&["--config", "/tmp/f.conf", "--dry-run", "--once", "--verbose"]),
-            Ok(Command::Run(Options {
-                config: Some(PathBuf::from("/tmp/f.conf")),
-                dry_run: true,
-                once: true,
-                verbose: true,
-            }))
+            parse(&["-c", "/tmp/f.conf", "-n", "-1", "-v"]),
+            Ok(Command::Run(want(Mode::Once)))
+        );
+        assert_eq!(
+            parse(&["--config", "/tmp/f.conf", "--dry-run", "--full", "--verbose"]),
+            Ok(Command::Run(want(Mode::Full)))
+        );
+    }
+
+    #[test]
+    fn once_and_full_are_exclusive() {
+        assert_eq!(parse(&["--once", "--once"]).map(|_| ()), Ok(()));
+        assert_eq!(
+            parse(&["--once", "--full"]),
+            Err("--once and --full cannot be combined".to_owned())
         );
     }
 
