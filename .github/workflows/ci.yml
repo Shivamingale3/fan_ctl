@@ -21,7 +21,7 @@ jobs:
     name: fmt · clippy · test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install Rust
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
@@ -38,7 +38,7 @@ jobs:
     name: shellcheck
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - run: shellcheck -s sh packaging/install.sh
 
   build:
@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-24.04
     needs: check
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install Rust
         run: |
           rustup toolchain install stable --profile minimal --target "$TARGET"
@@ -60,7 +60,7 @@ jobs:
           BIN="target/$TARGET/release/fan_ctl"
           file "$BIN" | tee /dev/stderr | grep -q "ARM aarch64.*statically linked"
           ls -l "$BIN"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: fan_ctl-aarch64
           path: target/${{ env.TARGET }}/release/fan_ctl
@@ -71,7 +71,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     needs: build
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: fan_ctl-aarch64
       - run: chmod +x fan_ctl && ./fan_ctl --version && ./fan_ctl --help
