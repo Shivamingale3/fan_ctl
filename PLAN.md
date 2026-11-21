@@ -1,6 +1,6 @@
 # fan_ctl — Plan
 
-Status: **DRAFT, waiting for "go".** No code yet. Facts come from [RESEARCH.md](RESEARCH.md).
+Status: **implemented** (phases 1–5, PRs #1–#5). Facts come from [RESEARCH.md](RESEARCH.md).
 
 ## 1. Goal
 
@@ -79,7 +79,7 @@ fan_ctl/
 
 - `Type=simple`, `Restart=always`, `RestartSec=10`
 - `ExecStart=/usr/local/bin/fan_ctl`
-- `ExecStopPost=` shell one-liner: find `pwm_pio` chip, `cat period > duty_cycle`
+- `ExecStopPost=/usr/local/bin/fan_ctl --full` (fan to 100 % on any stop)
 - Hardening: `NoNewPrivileges`, `ProtectSystem=strict`, `ReadWritePaths=/sys/class/pwm /sys/devices/platform`, `ProtectHome`, `PrivateTmp`, `MemoryMax=8M`
 - `WantedBy=multi-user.target`
 
