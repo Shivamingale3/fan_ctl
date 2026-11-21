@@ -1,0 +1,23 @@
+[package]
+name = "fan_ctl"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Temperature-driven case fan controller for Raspberry Pi 5 (CPU + NVMe aware)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Shivamingale3/fan_ctl"
+readme = "README.md"
+keywords = ["raspberry-pi", "fan", "pwm", "nvme", "thermal"]
+categories = ["hardware-support", "embedded"]
+publish = false
+exclude = ["sim/", "tests_data/", ".github/"]
+
+# Intentionally no dependencies: std only, one small static binary.
+[dependencies]
+
+[profile.release]
+opt-level = "z"     # smallest binary; the hot path runs once every few seconds
+lto = true
+codegen-units = 1
+panic = "abort"     # systemd restarts us; no unwinding machinery needed
+strip = true
