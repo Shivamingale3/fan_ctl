@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: aarch64-unknown-linux-musl
+
+jobs:
+  check:
+    name: fmt · clippy · test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+
+  build:
+    name: build aarch64 (static musl)
+    runs-on: ubuntu-24.04
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --target "$TARGET"
+          rustup default stable
+      - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
+        run: cargo build --release --locked --target "$TARGET"
+      - name: Verify static aarch64 binary
+        run: |
+          BIN="target/$TARGET/release/fan_ctl"
+          file "$BIN" | tee /dev/stderr | grep -q "ARM aarch64.*statically linked"
+          ls -l "$BIN"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fan_ctl-aarch64
+          path: target/${{ env.TARGET }}/release/fan_ctl
+          if-no-files-found: error
+
+  smoke:
+    name: smoke test on arm64
+    runs-on: ubuntu-24.04-arm
+    needs: build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: fan_ctl-aarch64
+      - run: chmod +x fan_ctl && ./fan_ctl
