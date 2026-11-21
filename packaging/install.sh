@@ -94,7 +94,11 @@ ensure_overlay() {
             say "warning: $BOOT_CONFIG already has a different pwm-pio line; left unchanged"
     else
         cp -p "$BOOT_CONFIG" "$BOOT_CONFIG.fan_ctl.bak"
-        printf '\n%s\n%s\n' "$MARKER" "$want" >>"$BOOT_CONFIG"
+        # Add a newline only if the file lacks one, so --uninstall restores it byte for byte.
+        if [ -n "$(tail -c 1 "$BOOT_CONFIG")" ]; then
+            echo >>"$BOOT_CONFIG"
+        fi
+        printf '%s\n%s\n' "$MARKER" "$want" >>"$BOOT_CONFIG"
         say "added '$want' to $BOOT_CONFIG (backup: $BOOT_CONFIG.fan_ctl.bak)"
     fi
     # Load it now too, so no reboot is needed.
