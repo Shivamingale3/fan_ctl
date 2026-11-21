@@ -6,6 +6,7 @@
 pub mod controller;
 pub mod curve;
 pub mod duty;
+pub mod pwm;
 pub mod sensor;
 pub mod sysfs;
 
