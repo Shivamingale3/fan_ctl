@@ -110,3 +110,16 @@ fan_ctl/
 1. Repo: **new public GitHub repo** `fan_ctl`. The Pi downloads releases with no token.
 2. Fan floor: **never off**, MIN 60 % (bench test).
 3. Curve: chosen by simulation (C), see §3.
+
+## 10. Implementation phases (one PR each, one commit per logical change)
+
+| Phase | PR | Contents |
+|---|---|---|
+| 1 | Scaffold | Cargo manifest (edition 2024, zero deps, size-optimised release profile), lint/format config, licence, README, CI (fmt, clippy, test, aarch64-musl build) |
+| 2 | Control logic | `curve` (temperature → duty), `controller` (min duty, 5 % steps, hysteresis, kick-start, fail-safe). Pure code, fully unit-tested |
+| 3 | Hardware I/O | `sensor` (hwmon discovery by name, read °C), `pwm` (find `pwm_pio` chip, export, period, duty). Sysfs root is injectable → tested against fake sysfs trees |
+| 4 | Daemon | `config` (defaults + `/etc/fan_ctl.conf`, key = value), `log` (journald priority prefixes), `daemon` loop, CLI (`--config`, `--dry-run`, `--once`, `--version`) |
+| 5 | Packaging & release | systemd unit, `install.sh` / uninstall, release workflow (tag `v*` → GitHub Release with static binary + sha256) |
+| 6 | (later) Debian package | `.deb` for Raspberry Pi OS / apt |
+
+Module layout: `src/{main,lib,config,curve,controller,sensor,pwm,daemon,log}.rs`, integration tests in `tests/`.
