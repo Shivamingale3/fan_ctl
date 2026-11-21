@@ -92,3 +92,17 @@ Same load as runs 1 and 3 (4 × sha256 + NVMe direct-I/O reads + periodic 1 GB w
 - The fan climbed in single 5 % steps (60 → 95 %) with no hunting.
 - After the load, the NVMe cools slowly (case air holds heat). The 3 °C hysteresis kept 95 % until the NVMe fell below ~66 °C.
 - Service footprint during the test: VmRSS 512 kB; CPU time after 19 min still rounds to 0 s.
+
+## Reboot test (2026-11-21)
+
+```
+[ 3.754] systemd: Starting fan_ctl.service
+[ 3.832] fan_ctl: fan_ctl 0.1.0 starting: nvme 55→72 °C, cpu 60→80 °C, min 60%, 25000 Hz
+[ 3.833] fan_ctl: driving /sys/class/pwm/pwmchip2/pwm0
+[ 5.833] fan_ctl: fan 85% (cpu 40.2 °C, nvme 63.8 °C)     ← after the 2 s kick
+[20.844] fan_ctl: fan 90% (cpu 43.0 °C, nvme 65.8 °C)
+```
+
+- The overlay came from `config.txt` at boot (`dtoverlay -l` shows no runtime overlays), and GPIO27 is `PIO27`.
+- The fan is under control **~5.8 s after power-on**. Before the service starts, the pin sits low, so the fan is off for those few seconds.
+- No failed units. The other services were unchanged apart from on-demand ones (`getty@tty2`, `systemd-hostnamed`).
