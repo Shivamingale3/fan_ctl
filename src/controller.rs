@@ -55,8 +55,8 @@ impl Settings {
     ///
     /// Returns [`SettingsError`] if `step` is outside `1..=50` or `hysteresis`
     /// is negative or not finite.
-    pub fn new(min: Duty, step: u8, hysteresis: Celsius) -> Result<Self, SettingsError> {
-        if !(1..=50).contains(&step) {
+    pub const fn new(min: Duty, step: u8, hysteresis: Celsius) -> Result<Self, SettingsError> {
+        if step == 0 || step > 50 {
             return Err(SettingsError::StepOutOfRange(step));
         }
         if !hysteresis.is_finite() || hysteresis < 0.0 {

@@ -49,7 +49,7 @@ impl Curve {
     /// # Errors
     ///
     /// Returns [`CurveError`] if either value is not finite or `start >= full`.
-    pub fn new(start: Celsius, full: Celsius) -> Result<Self, CurveError> {
+    pub const fn new(start: Celsius, full: Celsius) -> Result<Self, CurveError> {
         if !start.is_finite() || !full.is_finite() {
             return Err(CurveError::NotFinite);
         }
