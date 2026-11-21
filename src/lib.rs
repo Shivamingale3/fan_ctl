@@ -6,3 +6,7 @@
 pub mod controller;
 pub mod curve;
 pub mod duty;
+pub mod sysfs;
+
+#[cfg(test)]
+mod testutil;
