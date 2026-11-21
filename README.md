@@ -91,4 +91,4 @@ Releases: push a tag `vX.Y.Z` that matches `Cargo.toml`. CI tests, builds and pu
 
 ## License
 
-Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+[BSD-3-Clause](LICENSE), the same licence as Raspberry Pi's own tools (e.g. `raspi-utils`).
