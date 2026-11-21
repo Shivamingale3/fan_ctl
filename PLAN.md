@@ -28,15 +28,17 @@ Run the case fan (GPIO27, pin 13) at a speed set by **whichever of the NVMe and 
  service stop / crash ─► ExecStopPost sets 100 %  (sysfs PWM keeps the value after exit)
 ```
 
-## 3. Speed curves (from simulation, see [sim/RESULTS.md](sim/RESULTS.md); MIN confirmed by bench test)
+## 3. Speed curves (simulation + bench test, see [sim/RESULTS.md](sim/RESULTS.md))
 
 | NVMe °C | CPU °C | Fan duty |
 |---|---|---|
-| ≤ 55 | ≤ 60 | MIN (≈30 %), **never off** |
+| ≤ 55 | ≤ 60 | MIN = **60 %**, never off |
 | 55 → 72 | 60 → 80 | linear MIN → 100 % |
 | ≥ 72 | ≥ 80 | 100 % |
 
-Expected (model): idle ≈ 54 °C at 40 %, 50 % load ≈ 63 °C at 65 %, full load ≈ 70 °C at 100 %.
+Expected (model + bench map): idle ≈ 52 °C at 65 %, 50 % load ≈ 62 °C at 80 %, full load ≈ 70 °C at 100 %.
+
+**PWM: 25 kHz** (period 40000 ns). Lower frequencies whine (bench test, see sim/RESULTS.md).
 
 - Final duty = the higher of the two.
 - **Hysteresis 3 °C:** speed only drops once the temperature is 3 °C below the point that raised it, so the fan doesn't hunt.
@@ -91,7 +93,7 @@ fan_ctl/
 
 ## 8. Rollout on the Pi
 
-1. Bench test (before final constants), user listens:
+1. ✅ Bench test done 2026-11-21 (25 kHz, MIN 60 %, kick-start). Original steps:
    - 25 kHz at 100 / 70 / 50 / 35 / 25 % → find MIN that spins from a standstill and keeps spinning.
    - If it doesn't spin cleanly at 25 kHz, repeat at 5 kHz and 1 kHz.
 2. Set MIN and frequency in `main.rs`, commit, tag `v0.1.0` → CI builds the release.
@@ -106,5 +108,5 @@ fan_ctl/
 ## 9. Decisions (2026-11-21)
 
 1. Repo: **new public GitHub repo** `fan_ctl`. The Pi downloads releases with no token.
-2. Fan floor: **never off**, MIN from the bench test.
+2. Fan floor: **never off**, MIN 60 % (bench test).
 3. Curve: chosen by simulation (C), see §3.

@@ -101,6 +101,6 @@ CPU cost is ~0 for all at a 5–15 s interval. **Rust chosen** (user decision).
 
 ## 9. Open questions
 
-1. Lowest duty that starts / keeps this fan spinning (bench test).
-2. Is 25 kHz OK with the unknown transistor, or does it need a lower frequency (e.g. 1–5 kHz)? A slow transistor at 25 kHz runs hot and may not switch cleanly. Bench test both.
+1. ~~Lowest duty~~ → 60 % at 25 kHz, with kick-start (bench test 2026-11-21).
+2. ~~Frequency~~ → 25 kHz: silent but non-linear (70 % ≈ half speed). 5 kHz / 1 kHz faster but whine.
 3. ~~Repo~~ → new public repo (decided 2026-11-21).

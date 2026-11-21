@@ -13,14 +13,14 @@ def set_load(frac):
 
 print("Steady NVMe °C by fan duty (model):")
 print("duty   idle   25%load  50%load  full")
-for d in (0, 30, 40, 50, 60, 70, 80, 90, 100):
+for d in (0, 60, 70, 80, 90, 100):
     row = [m.steady(d / 100, "idle")[0]]
     for fr in (0.25, 0.5):
         set_load(fr); row.append(m.steady(d / 100, "mid")[0])
     row.append(m.steady(d / 100, "load")[0])
     print(f"{d:3d}%  " + "  ".join(f"{x:6.1f}" for x in row))
 
-def controller(curve, min_duty=30, step=5, hyst=3.0):
+def controller(curve, min_duty=60, step=5, hyst=3.0):
     """Same logic planned for main.rs: duty from curve, round up to step, drop only after hyst."""
     state = {"duty": 100}
     def duty_at(t):
@@ -51,17 +51,17 @@ def closed_loop(curve, interval_off=15, interval_on=5):
             if t >= next_sample:
                 nd = ctl(tn)
                 if nd != duty: changes += 1
-                duty = nd; next_sample = t + (interval_off if duty <= 30 else interval_on)
+                duty = nd; next_sample = t + (interval_off if duty <= 60 else interval_on)
             tn, tc = m.step(tn, tc, duty / 100, mode)
             peak = max(peak, tn); ds.append(duty); t += 1
         log[f"{mode}{'' if mode != 'mid' else int(fr*100)}"] = (tn, peak, sum(ds[-300:]) / 300)
     return log, changes
 
 CANDIDATES = {
-    "A plan  50→70": ((50, 30), (70, 100)),
-    "B early 45→65": ((45, 30), (65, 100)),
-    "C late  55→72": ((55, 30), (72, 100)),
-    "D wide  45→70": ((45, 30), (70, 100)),
+    "C 55→72 (chosen)": ((55, 60), (72, 100)),
+    "E 52→70": ((52, 60), (70, 100)),
+    "F 50→68": ((50, 60), (68, 100)),
+    "G 55→70": ((55, 60), (70, 100)),
 }
 print("\nClosed loop: idle 15 min → 50% load 15 min → full load 20 min → idle 20 min")
 print("curve            | idle end °C/duty | 50% load end °C/duty | full peak °C/duty | idle-after °C/duty | duty changes")

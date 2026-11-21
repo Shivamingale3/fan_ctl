@@ -3,7 +3,7 @@
   NVMe node : C_n dTn/dt = P_n           - G_n(f) (Tn - Tc)
   Case air  : C_c dTc/dt = P_n + P_sys   - G_c(f) (Tc - Troom)
   G(f) = G0 + G1 * f**0.8          (forced convection ~ airflow^0.8)
-  f    = airflow fraction 0..1     (assumed ~ linear in duty above stall)
+  f    = airflow fraction 0..1     (duty->airflow map measured in bench test)
 
 Powers are fixed from typical figures (NVMe idle 1.5 W / load 4 W, rest of Pi
 idle 3 W / load 9 W); conductances, heat capacities and room temp are fitted.
@@ -24,8 +24,13 @@ def load_run(name):
 def phase_load(ph):
     return "load" if ph.startswith("load") else "idle"
 
-def airflow(duty, stall=0.2):
-    return 0.0 if duty <= stall else (duty - stall) / (1 - stall)
+# Measured by ear, bench test 2026-11-21 @ 25 kHz: 100%=full, 70%~half, 60%~0.38, 50%~quarter.
+# Fit data only contains 0 % and 100 %, so this map doesn't change the fitted parameters.
+AIRFLOW_PTS = [(0.0, 0.0), (0.45, 0.0), (0.50, 0.25), (0.60, 0.38), (0.70, 0.50), (1.0, 1.0)]
+def airflow(duty):
+    for (x0, y0), (x1, y1) in zip(AIRFLOW_PTS, AIRFLOW_PTS[1:]):
+        if duty <= x1: return y0 + (y1 - y0) * (duty - x0) / (x1 - x0)
+    return 1.0
 
 class Model:
     names = ["Gn0", "Gn1", "Gc0", "Gc1", "Cn", "Cc", "Troom", "Tc0_run3"]
