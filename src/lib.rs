@@ -3,9 +3,12 @@
 //! The fan speed follows whichever of the CPU and NVMe temperatures needs more
 //! cooling. Modules are added phase by phase; see `PLAN.md`.
 
+pub mod config;
 pub mod controller;
 pub mod curve;
+pub mod daemon;
 pub mod duty;
+pub mod log;
 pub mod pwm;
 pub mod sensor;
 pub mod sysfs;
