@@ -39,6 +39,10 @@ impl FakeSys {
         fs::read_to_string(self.root.join(rel)).unwrap()
     }
 
+    pub fn remove(&self, rel: &str) {
+        fs::remove_dir_all(self.root.join(rel)).unwrap();
+    }
+
     /// Creates a symlink at `rel` pointing to `target` (target need not exist).
     pub fn symlink(&self, rel: &str, target: &str) {
         let p = self.root.join(rel);

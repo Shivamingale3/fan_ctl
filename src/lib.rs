@@ -6,6 +6,7 @@
 pub mod controller;
 pub mod curve;
 pub mod duty;
+pub mod sensor;
 pub mod sysfs;
 
 #[cfg(test)]
