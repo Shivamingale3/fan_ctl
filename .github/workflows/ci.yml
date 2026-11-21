@@ -67,4 +67,4 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: fan_ctl-aarch64
-      - run: chmod +x fan_ctl && ./fan_ctl
+      - run: chmod +x fan_ctl && ./fan_ctl --version && ./fan_ctl --help
