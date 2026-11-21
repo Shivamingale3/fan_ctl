@@ -34,6 +34,13 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --no-deps --locked
 
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck -s sh packaging/install.sh
+
   build:
     name: build aarch64 (static musl)
     runs-on: ubuntu-24.04
