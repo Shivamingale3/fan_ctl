@@ -1,0 +1,48 @@
+# fan_ctl: temperature-driven case fan controller (CPU + NVMe aware).
+# Installed to /etc/systemd/system/fan_ctl.service by install.sh.
+
+[Unit]
+Description=Case fan controller (CPU + NVMe aware)
+Documentation=https://github.com/Shivamingale3/fan_ctl
+After=local-fs.target
+# Keep restarting forever: a fan controller must never give up.
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/fan_ctl
+# Whatever the reason for stopping (stop, crash, failed start), leave the fan at 100 %.
+ExecStopPost=/usr/local/bin/fan_ctl --full
+Restart=always
+RestartSec=5
+
+# Writes only to /sys/class/pwm; needs no capabilities as root owns those files.
+# ProtectKernelTunables is deliberately absent: it would make /sys read-only.
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+UMask=0077
+MemoryMax=8M
+TasksMax=4
+
+[Install]
+WantedBy=multi-user.target
