@@ -6,6 +6,7 @@
 pub mod config;
 pub mod controller;
 pub mod curve;
+pub mod daemon;
 pub mod duty;
 pub mod log;
 pub mod pwm;
