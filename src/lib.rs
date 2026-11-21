@@ -7,6 +7,7 @@ pub mod config;
 pub mod controller;
 pub mod curve;
 pub mod duty;
+pub mod log;
 pub mod pwm;
 pub mod sensor;
 pub mod sysfs;
