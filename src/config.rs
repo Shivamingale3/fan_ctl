@@ -385,6 +385,24 @@ mod tests {
         assert!(err("hysteresis = -1").contains("hysteresis"));
     }
 
+    const SAMPLE: &str = include_str!("../packaging/fan_ctl.conf");
+
+    #[test]
+    fn sample_config_documents_the_defaults() {
+        assert_eq!(Config::parse(SAMPLE).unwrap(), Config::default(), "sample as shipped");
+        let uncommented: String = SAMPLE
+            .lines()
+            .map(|l| match l.strip_prefix('#') {
+                Some(rest) if rest.contains(" = ") && !rest.starts_with(' ') => rest,
+                _ => l,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let keys = uncommented.lines().filter(|l| l.contains(" = ") && !l.starts_with('#')).count();
+        assert_eq!(keys, 13, "every key except sysfs_root is documented");
+        assert_eq!(Config::parse(&uncommented).unwrap(), Config::default(), "uncommented sample");
+    }
+
     #[test]
     fn missing_file_is_default_unless_required() {
         let sys = FakeSys::new();
