@@ -13,8 +13,9 @@ use std::{
 
 use fan_ctl::config::{self, Config};
 use fan_ctl::control::{
-    self, Commands, NoCommands, OVERRIDE_FILE, Override, RunDir, STATUS_FILE, unix_now,
+    self, Commands, Manual, NoCommands, OVERRIDE_FILE, Override, RunDir, STATUS_FILE, unix_now,
 };
+use fan_ctl::cooler::{Cooler, ThermalCooler};
 use fan_ctl::daemon::{Daemon, DryRunFan, FanOutput, ThreadSleeper};
 use fan_ctl::duty::Duty;
 use fan_ctl::log::{self, Level};
@@ -22,15 +23,20 @@ use fan_ctl::pwm::{self, PwmChannel};
 use fan_ctl::sensor::{CPU_CHIP, HwmonSensor, NVME_CHIP};
 
 const USAGE: &str = "\
-Usage: fan_ctl [OPTIONS]                 run the controller (what the service does)
-       fan_ctl status                    print the running controller's status
-       fan_ctl set <0-100> [--for TIME]  manual duty in %, TIME e.g. 30m, 2h, forever (default 1h)
-       fan_ctl auto                      end manual control
+Usage: fan_ctl [OPTIONS]                      run the controller (what the service does)
+       fan_ctl status                         print the running controller's status
+       fan_ctl set [PCT] [--cooler N] [--for TIME]
+                                              manual case fan duty (0-100 %) and/or
+                                              Active Cooler level (0-4); TIME e.g.
+                                              30m, 2h, forever (default 1h)
+       fan_ctl auto [--case | --cooler]       end manual control (default: both)
 
 Temperature-driven case fan controller for the Raspberry Pi 5.
 The fan follows whichever of the CPU and NVMe temperatures needs more cooling.
 Manual control never beats the safety rules: a sensor error, or a sensor at its
-full temperature, still runs the fan at 100 %. It ends when fan_ctl stops.
+full temperature, runs the case fan at 100 %; a sensor error, or the CPU at
+cooler_safety (75 °C), gives the Active Cooler back to the kernel. Manual
+control ends when fan_ctl stops.
 
 Options:
   -c, --config <PATH>  config file (default: /etc/fan_ctl.conf, used if present)
@@ -70,8 +76,8 @@ enum Command {
     Help,
     Version,
     Status(Option<PathBuf>),
-    Set { config: Option<PathBuf>, duty: Duty, secs: Option<u64> },
-    Auto(Option<PathBuf>),
+    Set { config: Option<PathBuf>, duty: Option<Duty>, cooler: Option<u8>, secs: Option<u64> },
+    Auto { config: Option<PathBuf>, case: bool, cooler: bool },
 }
 
 /// Default length of `fan_ctl set` without `--for`.
@@ -84,29 +90,47 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
         _ => return parse_run(args),
     }
     let cmd = args.next().unwrap_or_default();
-    let (mut config, mut duty, mut secs) = (None, None, Some(DEFAULT_SET_SECS));
+    let (mut config, mut duty, mut cooler, mut secs) = (None, None, None, Some(DEFAULT_SET_SECS));
+    let (mut only_case, mut only_cooler) = (false, false);
     while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "-c" | "--config" => {
+        match (cmd.as_str(), arg.as_str()) {
+            (_, "-c" | "--config") => {
                 config = Some(PathBuf::from(args.next().ok_or("--config needs a path")?));
             }
-            "--for" if cmd == "set" => {
+            (_, "-h" | "--help") => return Ok(Command::Help),
+            ("set", "--for") => {
                 secs = control::parse_duration(&args.next().ok_or("--for needs a time")?)?;
             }
-            "-h" | "--help" => return Ok(Command::Help),
-            v if cmd == "set" && duty.is_none() && !v.starts_with('-') => {
+            ("set", "--cooler") => {
+                let v = args.next().ok_or("--cooler needs a level")?;
+                cooler = Some(
+                    v.parse()
+                        .ok()
+                        .filter(|&l| l <= control::MAX_COOLER_LEVEL)
+                        .ok_or(format!("bad cooler level `{v}` (0-4)"))?,
+                );
+            }
+            ("set", v) if duty.is_none() && !v.starts_with('-') => {
                 let p = v.trim_end_matches('%');
                 duty = Some(
                     p.parse().ok().and_then(Duty::new).ok_or(format!("bad duty `{v}` (0-100)"))?,
                 );
             }
-            other => return Err(format!("unknown argument `{other}`")),
+            ("auto", "--case") => only_case = true,
+            ("auto", "--cooler") => only_cooler = true,
+            (_, other) => return Err(format!("unknown argument `{other}`")),
         }
     }
     Ok(match cmd.as_str() {
         "status" => Command::Status(config),
-        "auto" => Command::Auto(config),
-        _ => Command::Set { config, duty: duty.ok_or("set needs a duty (0-100)")?, secs },
+        "auto" => {
+            let both = only_case == only_cooler;
+            Command::Auto { config, case: both || only_case, cooler: both || only_cooler }
+        }
+        _ if duty.is_none() && cooler.is_none() => {
+            return Err("set needs a duty (0-100) and/or --cooler LEVEL".into());
+        }
+        _ => Command::Set { config, duty, cooler, secs },
     })
 }
 
@@ -152,11 +176,29 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(Command::Status(c)) => with_run_dir(c.as_ref(), status),
-        Ok(Command::Set { config, duty, secs }) => {
-            let o = Override { duty, until: secs.map(|s| unix_now().saturating_add(s)) };
-            with_run_dir(config.as_ref(), |dir| set(dir, Some(o)))
+        Ok(Command::Set { config, duty, cooler, secs }) => {
+            let until = secs.map(|s| unix_now().saturating_add(s));
+            with_run_dir(config.as_ref(), |dir| {
+                change(dir, |o| {
+                    if let Some(value) = duty {
+                        o.case = Some(Manual { value, until });
+                    }
+                    if let Some(value) = cooler {
+                        o.cooler = Some(Manual { value, until });
+                    }
+                })
+            })
         }
-        Ok(Command::Auto(c)) => with_run_dir(c.as_ref(), |dir| set(dir, None)),
+        Ok(Command::Auto { config, case, cooler }) => with_run_dir(config.as_ref(), |dir| {
+            change(dir, |o| {
+                if case {
+                    o.case = None;
+                }
+                if cooler {
+                    o.cooler = None;
+                }
+            })
+        }),
         Err(msg) => {
             eprint!("fan_ctl: {msg}\n\n{USAGE}");
             ExitCode::from(USAGE_ERROR)
@@ -198,8 +240,20 @@ fn run(opts: &Options) -> ExitCode {
     let cpu = HwmonSensor::new(&cfg.sysfs_root, CPU_CHIP);
     let nvme = HwmonSensor::new(&cfg.sysfs_root, NVME_CHIP);
     if opts.dry_run {
-        let d = Daemon::new(cpu, nvme, DryRunFan, ThreadSleeper, NoCommands, &cfg);
+        let d = Daemon::new(
+            cpu,
+            nvme,
+            DryRunFan,
+            ThreadSleeper,
+            NoCommands,
+            None::<ThermalCooler>,
+            &cfg,
+        );
         return drive(d, opts.mode);
+    }
+    let cooler = ThermalCooler::find(&cfg.sysfs_root);
+    if let Some(c) = &cooler {
+        log::info(format_args!("Active Cooler: {} (manual control available)", c.zone().display()));
     }
 
     let channel = pwm::find_chip(&cfg.sysfs_root, &cfg.pwm_device)
@@ -208,7 +262,7 @@ fn run(opts: &Options) -> ExitCode {
         Ok(pwm) => {
             log::info(format_args!("driving {}", pwm.path().display()));
             let commands = RunDir::new(&cfg.run_dir);
-            drive(Daemon::new(cpu, nvme, pwm, ThreadSleeper, commands, &cfg), opts.mode)
+            drive(Daemon::new(cpu, nvme, pwm, ThreadSleeper, commands, cooler, &cfg), opts.mode)
         }
         Err(e) => {
             log::error(format_args!("pwm: {e}"));
@@ -217,8 +271,17 @@ fn run(opts: &Options) -> ExitCode {
     }
 }
 
-/// `--full`: drive the fan to 100 % and exit, without reading any sensor.
+/// `--full`: give the Active Cooler back to the kernel, drive the fan to 100 %
+/// and exit, without reading any sensor. Runs on every service stop.
 fn full_speed(cfg: &Config, dry_run: bool) -> ExitCode {
+    if !dry_run {
+        if let Some(mut c) = ThermalCooler::find(&cfg.sysfs_root) {
+            match c.release() {
+                Ok(()) => log::info(format_args!("Active Cooler: kernel in control")),
+                Err(e) => log::error(format_args!("Active Cooler: {e}")),
+            }
+        }
+    }
     let result = if dry_run {
         DryRunFan.set(Duty::FULL)
     } else {
@@ -258,9 +321,11 @@ fn status(dir: &Path) -> ExitCode {
         Ok(text) => {
             print!("{text}");
             let now = unix_now();
-            if let Some(u) = control::field(&text, "until").and_then(|u| u.parse::<u64>().ok()) {
-                if u > now {
-                    println!("# manual ends in {}", human(u - now));
+            for (key, what) in [("until", "case fan"), ("cooler_until", "cooler")] {
+                if let Some(u) = control::field(&text, key).and_then(|u| u.parse::<u64>().ok()) {
+                    if u > now {
+                        println!("# {what} manual ends in {}", human(u - now));
+                    }
                 }
             }
             if let Some(age) = control::field(&text, "updated")
@@ -282,15 +347,21 @@ fn status(dir: &Path) -> ExitCode {
     }
 }
 
-/// `fan_ctl set` / `fan_ctl auto`: writes or removes the override, then waits
-/// up to 5 s for the controller to apply it and prints the status.
-fn set(dir: &Path, o: Option<Override>) -> ExitCode {
-    let result = match o {
-        Some(o) => control::write_atomic(dir, OVERRIDE_FILE, &o.render()),
-        None => match fs::remove_file(dir.join(OVERRIDE_FILE)) {
+/// `fan_ctl set` / `fan_ctl auto`: edits the override file (keeping the other
+/// fan's part), then waits up to 5 s for the controller to apply it and prints
+/// the status.
+fn change(dir: &Path, edit: impl FnOnce(&mut Override)) -> ExitCode {
+    let path = dir.join(OVERRIDE_FILE);
+    let mut o =
+        fs::read_to_string(&path).ok().and_then(|t| Override::parse(&t).ok()).unwrap_or_default();
+    edit(&mut o);
+    let result = if o.is_empty() {
+        match fs::remove_file(&path) {
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
             r => r,
-        },
+        }
+    } else {
+        control::write_atomic(dir, OVERRIDE_FILE, &o.render())
     };
     if let Err(e) = result {
         let hint = if e.kind() == io::ErrorKind::PermissionDenied {
@@ -301,10 +372,18 @@ fn set(dir: &Path, o: Option<Override>) -> ExitCode {
         log::error(format_args!("{}: {e} ({hint})", dir.display()));
         return ExitCode::FAILURE;
     }
-    let want = o.map(|o| o.duty.percent().to_string());
+    let case = o.case.map(|m| m.value.percent().to_string());
+    let cooler = o.cooler.map(|m| m.value.to_string());
     for _ in 0..50 {
         let text = fs::read_to_string(dir.join(STATUS_FILE)).unwrap_or_default();
-        if control::field(&text, "manual").map(str::to_owned) == want {
+        let has_cooler = control::field(&text, "cooler_mode").is_some();
+        if cooler.is_some() && !has_cooler && !text.is_empty() {
+            log::error(format_args!("no Active Cooler found; the cooler level is ignored"));
+            return ExitCode::FAILURE;
+        }
+        if control::field(&text, "manual").map(str::to_owned) == case
+            && (!has_cooler || control::field(&text, "cooler_manual").map(str::to_owned) == cooler)
+        {
             return status(dir);
         }
         thread::sleep(Duration::from_millis(100));
@@ -323,8 +402,8 @@ fn human(secs: u64) -> String {
     }
 }
 
-fn drive<F: FanOutput, K: Commands>(
-    mut daemon: Daemon<HwmonSensor, HwmonSensor, F, ThreadSleeper, K>,
+fn drive<F: FanOutput, K: Commands, L: Cooler>(
+    mut daemon: Daemon<HwmonSensor, HwmonSensor, F, ThreadSleeper, K, L>,
     mode: Mode,
 ) -> ExitCode {
     if mode == Mode::Once {
@@ -396,26 +475,35 @@ mod tests {
 
     #[test]
     fn control_commands() {
-        let pct = |p| Duty::new(p).unwrap();
+        let pct = |p| Duty::new(p);
+        let set = |duty, cooler, secs| Ok(Command::Set { config: None, duty, cooler, secs });
         assert_eq!(parse(&["status"]), Ok(Command::Status(None)));
-        assert_eq!(parse(&["auto", "-c", "/x"]), Ok(Command::Auto(Some(PathBuf::from("/x")))));
+        assert_eq!(parse(&["set", "75"]), set(pct(75), None, Some(3_600)));
+        assert_eq!(parse(&["set", "0%", "--for", "30m"]), set(Some(Duty::OFF), None, Some(1_800)));
+        assert_eq!(parse(&["set", "--for", "forever", "100"]), set(Some(Duty::FULL), None, None));
+        assert_eq!(parse(&["set", "--cooler", "2"]), set(None, Some(2), Some(3_600)));
+        assert_eq!(parse(&["set", "80", "--cooler", "0"]), set(pct(80), Some(0), Some(3_600)));
         assert_eq!(
-            parse(&["set", "75"]),
-            Ok(Command::Set { config: None, duty: pct(75), secs: Some(3_600) })
+            parse(&["set"]),
+            Err("set needs a duty (0-100) and/or --cooler LEVEL".to_owned())
         );
-        assert_eq!(
-            parse(&["set", "0%", "--for", "30m"]),
-            Ok(Command::Set { config: None, duty: Duty::OFF, secs: Some(1_800) })
-        );
-        assert_eq!(
-            parse(&["set", "--for", "forever", "100"]),
-            Ok(Command::Set { config: None, duty: Duty::FULL, secs: None })
-        );
-        assert_eq!(parse(&["set"]), Err("set needs a duty (0-100)".to_owned()));
         assert_eq!(parse(&["set", "101"]), Err("bad duty `101` (0-100)".to_owned()));
+        assert_eq!(
+            parse(&["set", "--cooler", "11"]),
+            Err("bad cooler level `11` (0-4)".to_owned())
+        );
         assert_eq!(parse(&["set", "50", "60"]), Err("unknown argument `60`".to_owned()));
         assert_eq!(parse(&["status", "--for", "1h"]), Err("unknown argument `--for`".to_owned()));
         assert!(parse(&["set", "50", "--for", "1w"]).is_err());
+        let auto = |case, cooler| Ok(Command::Auto { config: None, case, cooler });
+        assert_eq!(parse(&["auto"]), auto(true, true));
+        assert_eq!(parse(&["auto", "--case"]), auto(true, false));
+        assert_eq!(parse(&["auto", "--cooler"]), auto(false, true));
+        assert_eq!(parse(&["auto", "--case", "--cooler"]), auto(true, true));
+        assert_eq!(
+            parse(&["auto", "-c", "/x"]),
+            Ok(Command::Auto { config: Some(PathBuf::from("/x")), case: true, cooler: true })
+        );
     }
 
     #[test]

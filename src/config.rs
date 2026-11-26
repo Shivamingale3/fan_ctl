@@ -14,6 +14,7 @@
 //! | `cpu_start` / `cpu_full` | `60` / `80` | CPU ramp, °C |
 //! | `nvme_start` / `nvme_full` | `55` / `72` | NVMe ramp, °C |
 //! | `kick_ms` | `2000` | full-speed kick when starting the fan (0..=10000) |
+//! | `cooler_safety` | `75` | CPU °C at which a manual Active Cooler level goes back to the kernel |
 //! | `interval_idle_s` | `15` | poll interval while at `min_duty` (1..=300) |
 //! | `interval_active_s` | `5` | poll interval above `min_duty` (1..=300) |
 //! | `sysfs_root` | `/sys` | for testing only |
@@ -80,6 +81,8 @@ pub struct Config {
     pub nvme_curve: Curve,
     /// Minimum duty, step and hysteresis.
     pub settings: Settings,
+    /// CPU °C at which a manual Active Cooler level is handed back to the kernel.
+    pub cooler_safety: Celsius,
     /// How long to run at full speed when starting the fan.
     pub kick: Duration,
     /// Poll interval while the fan is at its minimum duty.
@@ -99,6 +102,7 @@ impl Default for Config {
             cpu_curve: DEFAULT_CPU_CURVE,
             nvme_curve: DEFAULT_NVME_CURVE,
             settings: DEFAULT_SETTINGS,
+            cooler_safety: 75.0,
             kick: Duration::from_millis(2_000),
             interval_idle: Duration::from_secs(15),
             interval_active: Duration::from_secs(5),
@@ -240,6 +244,13 @@ impl Config {
                 "cpu_full" => cpu.1 = v.parse("°C as a number")?,
                 "nvme_start" => nvme.0 = v.parse("°C as a number")?,
                 "nvme_full" => nvme.1 = v.parse("°C as a number")?,
+                "cooler_safety" => {
+                    let t: Celsius = v.parse("°C as a number 40..=90")?;
+                    if !(40.0..=90.0).contains(&t) {
+                        return Err(v.bad("°C as a number 40..=90"));
+                    }
+                    cfg.cooler_safety = t;
+                }
                 "kick_ms" => {
                     cfg.kick = Duration::from_millis(v.ranged(
                         0,
@@ -341,6 +352,7 @@ mod tests {
              cpu_start = 65\ncpu_full = 85\n\
              nvme_start = 50\nnvme_full = 70\n\
              kick_ms = 500\n\
+             cooler_safety = 70\n\
              interval_idle_s = 30\ninterval_active_s = 2\n",
         )
         .unwrap();
@@ -352,6 +364,7 @@ mod tests {
         assert_eq!(c.cpu_curve, Curve::new(65.0, 85.0).unwrap());
         assert_eq!(c.nvme_curve, Curve::new(50.0, 70.0).unwrap());
         assert_eq!(c.kick, Duration::from_millis(500));
+        assert!((c.cooler_safety - 70.0).abs() < f32::EPSILON);
         assert_eq!(c.interval_idle, Duration::from_secs(30));
         assert_eq!(c.interval_active, Duration::from_secs(2));
     }
@@ -380,6 +393,7 @@ mod tests {
             "line 1: `kick_ms = 60000`: expected milliseconds 0..=10000"
         );
         assert!(err("pwm_device =").contains("non-empty"));
+        assert!(err("cooler_safety = 95").contains("40..=90"));
     }
 
     #[test]
@@ -407,7 +421,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let keys = uncommented.lines().filter(|l| l.contains(" = ") && !l.starts_with('#')).count();
-        assert_eq!(keys, 13, "every key except sysfs_root and run_dir is documented");
+        assert_eq!(keys, 14, "every key except sysfs_root and run_dir is documented");
         assert_eq!(Config::parse(&uncommented).unwrap(), Config::default(), "uncommented sample");
     }
 
