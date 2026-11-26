@@ -261,7 +261,9 @@ fn run(opts: &Options) -> ExitCode {
     match channel {
         Ok(pwm) => {
             log::info(format_args!("driving {}", pwm.path().display()));
-            let commands = RunDir::new(&cfg.run_dir);
+            // a fresh start is always auto, even if a crash skipped `--full`
+            let mut commands = RunDir::new(&cfg.run_dir);
+            commands.store(&Override::default());
             drive(Daemon::new(cpu, nvme, pwm, ThreadSleeper, commands, cooler, &cfg), opts.mode)
         }
         Err(e) => {
@@ -271,10 +273,14 @@ fn run(opts: &Options) -> ExitCode {
     }
 }
 
-/// `--full`: give the Active Cooler back to the kernel, drive the fan to 100 %
-/// and exit, without reading any sensor. Runs on every service stop.
+/// `--full`: give the Active Cooler back to the kernel, drive the fan to 100 %,
+/// remove the status and override files, and exit, without reading any sensor.
+/// Runs on every service stop.
 fn full_speed(cfg: &Config, dry_run: bool) -> ExitCode {
     if !dry_run {
+        for f in [STATUS_FILE, OVERRIDE_FILE] {
+            let _ = fs::remove_file(cfg.run_dir.join(f));
+        }
         if let Some(mut c) = ThermalCooler::find(&cfg.sysfs_root) {
             match c.release() {
                 Ok(()) => log::info(format_args!("Active Cooler: kernel in control")),

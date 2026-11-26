@@ -79,7 +79,7 @@ Manual never beats the safety rules:
 
 The kernel normally drives the Active Cooler from the CPU trip points and takes a hand-set level back within seconds, so a manual level pauses the `cpu-thermal` zone (`mode = disabled`) while it lasts. fan_ctl then checks the CPU every 5 s. The firmware's own throttling (~85 °C) keeps working regardless.
 
-Other programs can use the same two files in `/run/fan_ctl/` (removed when the service stops):
+Other programs can use the same two files in `/run/fan_ctl/` (both removed when the service stops; the override also on start):
 
 | File | Who writes | Content |
 |---|---|---|

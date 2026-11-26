@@ -16,8 +16,8 @@
 //! - the case fan runs at 100 % while either sensor is at its `*_full`
 //!   temperature, the cooler goes back to the kernel while the CPU is at
 //!   `cooler_safety` (both released `hysteresis` °C below);
-//! - `/run` is a tmpfs and the directory is removed when the service stops, so
-//!   a reboot or restart always starts in auto.
+//! - the files are removed when the service stops (`--full`) and the override
+//!   again when it starts, so a restart or reboot always starts in auto.
 //!
 //! Both files are replaced atomically (written to a temporary name, then renamed).
 

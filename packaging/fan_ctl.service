@@ -17,9 +17,13 @@ ExecStopPost=/usr/local/bin/fan_ctl --full
 Restart=always
 RestartSec=5
 # /run/fan_ctl: `status` (written by fan_ctl, readable by all) and `override`
-# (written by root via `fan_ctl set`). Removed on stop, so a restart is always auto.
+# (written by root via `fan_ctl set`). The directory is kept across restarts so
+# other sandboxed services can bind it with ReadWritePaths=; its files are not:
+# `--full` removes both on stop and a start clears the override, so a restart
+# is always auto. /run is a tmpfs, so a reboot clears everything.
 RuntimeDirectory=fan_ctl
 RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
 
 # Writes only to /sys/class/pwm and, for a manual Active Cooler level, the CPU
 # thermal zone's mode and the pwm-fan cooling device's level in /sys/class/thermal.
