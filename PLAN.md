@@ -120,6 +120,7 @@ fan_ctl/
 | 3 | Hardware I/O | `sensor` (hwmon discovery by name, read °C), `pwm` (find `pwm_pio` chip, export, period, duty). Sysfs root is injectable → tested against fake sysfs trees |
 | 4 | Daemon | `config` (defaults + `/etc/fan_ctl.conf`, key = value), `log` (journald priority prefixes), `daemon` loop, CLI (`--config`, `--dry-run`, `--once`, `--version`) |
 | 5 | Packaging & release | systemd unit, `install.sh` / uninstall, release workflow (tag `v*` → GitHub Release with static binary + sha256) |
-| 6 | (later) Debian package | `.deb` for Raspberry Pi OS / apt |
+| 6 | Manual control (v0.2.0) | `control` module: `/run/fan_ctl/override` (root) → manual duty, `/run/fan_ctl/status` every step; `fan_ctl status/set/auto`; safety rules still win (sensor error or sensor at full temperature → 100 %, released 3 °C below); override checked each second, cleared on expiry and on service stop |
+| 7 | (later) Debian package | `.deb` for Raspberry Pi OS / apt |
 
 Module layout: `src/{main,lib,config,curve,controller,sensor,pwm,daemon,log}.rs`, integration tests in `tests/`.

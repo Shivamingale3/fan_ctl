@@ -15,6 +15,10 @@ ExecStart=/usr/local/bin/fan_ctl
 ExecStopPost=/usr/local/bin/fan_ctl --full
 Restart=always
 RestartSec=5
+# /run/fan_ctl: `status` (written by fan_ctl, readable by all) and `override`
+# (written by root via `fan_ctl set`). Removed on stop, so a restart is always auto.
+RuntimeDirectory=fan_ctl
+RuntimeDirectoryMode=0755
 
 # Writes only to /sys/class/pwm; needs no capabilities as root owns those files.
 # ProtectKernelTunables is deliberately absent: it would make /sys read-only.

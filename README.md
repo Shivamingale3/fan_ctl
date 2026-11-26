@@ -55,6 +55,25 @@ fan_ctl --dry-run --once -v         # what it would do now, touching nothing (no
 sudo systemctl restart fan_ctl      # after editing /etc/fan_ctl.conf
 ```
 
+### Manual control
+
+```sh
+fan_ctl status                     # mode, duty, temperatures, curves (no root needed)
+sudo fan_ctl set 80                # 80 % for 1 h, then back to auto
+sudo fan_ctl set 0 --for 30m       # off for 30 min
+sudo fan_ctl set 100 --for forever # until fan_ctl stops or the Pi reboots
+sudo fan_ctl auto                  # back to the curves now
+```
+
+Manual never beats the safety rules: a sensor error, or the NVMe / CPU reaching its full temperature (72 / 80 °C by default), still runs the fan at 100 % (released 3 °C below). A change takes effect within about a second.
+
+Other programs can use the same two files in `/run/fan_ctl/` (removed when the service stops):
+
+| File | Who writes | Content |
+|---|---|---|
+| `status` | fan_ctl, every step | `mode = auto\|manual\|safety\|failsafe`, `duty`, `auto`, `manual`, `until`, `cpu`, `nvme`, `min_duty`, `cpu_curve`, `nvme_curve`, `updated` (one `key = value` per line) |
+| `override` | root | `duty = 0..100` and `until = <unix seconds>` (`0` = no end). Write it to a temporary name and rename it into place. A missing or invalid file means auto |
+
 Tuning: `sudo cp /etc/fan_ctl.conf.example /etc/fan_ctl.conf`, uncomment what you want to change, then restart. Unknown keys are rejected with the line number.
 
 ### Behaviour
