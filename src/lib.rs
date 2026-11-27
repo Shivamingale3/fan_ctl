@@ -4,7 +4,9 @@
 //! cooling. Modules are added phase by phase; see `PLAN.md`.
 
 pub mod config;
+pub mod control;
 pub mod controller;
+pub mod cooler;
 pub mod curve;
 pub mod daemon;
 pub mod duty;

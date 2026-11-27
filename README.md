@@ -1,6 +1,6 @@
 # fan_ctl
 
-Temperature-driven case fan controller for the **Raspberry Pi 5**.
+Temperature-driven case fan controller for the **Raspberry Pi 5**, with manual control of the case fan and the official Active Cooler.
 
 It sets the speed of a 2-wire case fan from **whichever of the CPU and NVMe temperatures needs more cooling**. The PWM comes from the RP1 PIO block, so it works on any GPIO, including pins with no hardware PWM.
 
@@ -54,6 +54,39 @@ journalctl -u fan_ctl -f            # watch decisions: "fan 65% (cpu 52.1 °C, n
 fan_ctl --dry-run --once -v         # what it would do now, touching nothing (no root needed)
 sudo systemctl restart fan_ctl      # after editing /etc/fan_ctl.conf
 ```
+
+### Manual control
+
+```sh
+fan_ctl status                       # modes, duty, cooler level + rpm, temperatures (no root needed)
+sudo fan_ctl set 80                  # case fan 80 % for 1 h, then back to auto
+sudo fan_ctl set 0 --for 30m         # case fan off for 30 min
+sudo fan_ctl set --cooler 2          # Active Cooler level 2 (of 0-4) for 1 h
+sudo fan_ctl set 100 --cooler 4 --for forever   # both, until fan_ctl stops or the Pi reboots
+sudo fan_ctl auto                    # both back to auto now (--case / --cooler for one)
+```
+
+Each fan has its own end time; setting one keeps the other.
+
+Manual never beats the safety rules:
+
+| | Case fan | Active Cooler |
+|---|---|---|
+| Sensor error | 100 % | back to the kernel |
+| Too hot | NVMe ≥ 72 °C or CPU ≥ 80 °C (the curves' full points): 100 % | CPU ≥ `cooler_safety` (75 °C): back to the kernel |
+| Released | 3 °C below | 3 °C below |
+| fan_ctl stops or crashes | 100 % | back to the kernel (`ExecStopPost`) |
+
+The kernel normally drives the Active Cooler from the CPU trip points and takes a hand-set level back within seconds, so a manual level pauses the `cpu-thermal` zone (`mode = disabled`) while it lasts. fan_ctl then checks the CPU every 5 s. The firmware's own throttling (~85 °C) keeps working regardless.
+
+Other programs can use the same two files in `/run/fan_ctl/` (both removed when the service stops; the override also on start):
+
+| File | Who writes | Content |
+|---|---|---|
+| `status` | fan_ctl, every step | one `key = value` per line: `mode`, `duty`, `auto`, `manual`, `until`, `cpu`, `nvme`, `min_duty`, `cpu_curve`, `nvme_curve`, `cooler_mode`, `cooler`, `cooler_max`, `cooler_rpm`, `cooler_manual`, `cooler_until`, `cooler_safety`, `updated`. Modes: `auto`, `manual`, `safety`, `failsafe` |
+| `override` | root | `duty = 0..100`, `duty_until = <unix s>`, `cooler = 0..4`, `cooler_until = <unix s>` (each optional, `0` = no end). Write it to a temporary name and rename it into place. A missing or invalid file means auto |
+
+A change takes effect within about a second.
 
 Tuning: `sudo cp /etc/fan_ctl.conf.example /etc/fan_ctl.conf`, uncomment what you want to change, then restart. Unknown keys are rejected with the line number.
 
